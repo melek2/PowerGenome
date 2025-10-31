@@ -2683,8 +2683,15 @@ def add_dg_resources(
 
     for idx, (region, s) in enumerate(dg_profiles.iteritems()):
         cap = s.max()
+        print(f"[DEBUG] Region: {region}, cap: {cap}, type: {type(cap)}")  # debug line
+        if cap == 0:
+            print(f"[WARNING] Region {region} has cap = 0. Skipping profile.")
+            continue
         df.loc[idx, "profile"] = (s / cap).round(3).to_numpy()
-        df.loc[idx, "Existing_Cap_MW"] = cap.round(0).astype(int)
+        try:
+            df.loc[idx, "Existing_Cap_MW"] = cap.round(0).astype(int)
+        except AttributeError:
+            df.loc[idx, "Existing_Cap_MW"] = int(round(cap, 0))
     df["technology"] = "distributed_generation"
     df["region"] = dg_profiles.columns
     df["cluster"] = 1
@@ -3612,7 +3619,13 @@ class GeneratorClusters:
                             grouped, self.settings["capacity_col"], tech
                         )
                         _df["region"] = region
-
+                        # EDITED by MBA: carry forward the plant_id_eia of each unit in the cluster
+                        _df["plant_id_eia"] = (
+                            grouped
+                            .reset_index()
+                            .groupby("cluster")["plant_id_eia"]
+                            .apply(lambda x: x.iloc[0])
+                        )
                         self.cluster_list.append(_df)
                         continue
                 elif num_clusters[region][tech] > 0:
