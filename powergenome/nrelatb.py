@@ -211,6 +211,7 @@ def fetch_atb_costs(
             )
 
         df = pd.DataFrame(all_rows, columns=col_names)
+        print(df)
         wacc_df = pd.DataFrame(
             wacc_rows, columns=["technology", "cost_case", "basis_year", "wacc_real"]
         )
@@ -432,7 +433,16 @@ def atb_fixed_var_om_existing(
             atb = [atb]
         missing = True
         for tech_detail in atb:
-            tech, detail = tech_detail.split("_")
+            try:
+                tech, detail = tech_detail.split("_")
+            except ValueError as e:
+                print(f"\n[DEBUG] atb_fixed_var_om_existing: bad tech_detail='{tech_detail}'")
+                print(f"[DEBUG] type={type(tech_detail)}, repr={repr(tech_detail)}")
+                raise ValueError(
+                    f"Error splitting tech_detail '{tech_detail}': expected exactly one underscore, "
+                    f"but got {tech_detail.count('_')} underscores. Full list: {atb}"
+                ) from e
+            # tech, detail = tech_detail.split("_")
             if not atb_hr_df.query(
                 "technology == @tech and tech_detail == @detail"
             ).empty:
@@ -480,7 +490,16 @@ def atb_fixed_var_om_existing(
             atb = [atb]
         missing = True
         for tech_detail in atb:
-            tech, detail = tech_detail.split("_")
+            try:
+                tech, detail = tech_detail.split("_")
+            except ValueError as e:
+                print(f"\n[DEBUG] atb_fixed_var_om_existing: bad tech_detail='{tech_detail}'")
+                print(f"[DEBUG] type={type(tech_detail)}, repr={repr(tech_detail)}")
+                raise ValueError(
+                    f"Error splitting tech_detail '{tech_detail}': expected exactly one underscore, "
+                    f"but got {tech_detail.count('_')} underscores. Full list: {atb}"
+                ) from e
+            # tech, detail = tech_detail.split("_")
             if (
                 not atb_om_names.query(
                     "technology == @tech and tech_detail == @detail"

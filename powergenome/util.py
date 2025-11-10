@@ -425,11 +425,23 @@ def check_settings(settings: dict, pg_engine: sa.engine) -> None:
             AND tech_detail == '{tech_detail}'
         """
         if len(pg_engine.execute(s).fetchall()) == 0:
+                        # Get possible matches to help the user
+            s_possible = """
+                SELECT DISTINCT technology, tech_detail, cost_case
+                FROM technology_costs_nrelatb
+                ORDER BY technology, tech_detail
+            """
+            possible = pd.read_sql_query(s_possible, pg_engine)
+
             s = f"""
     *****************************
     The technology {tech} - {tech_detail} listed in your settings file under 'atb_new_gen'
     does not match any NREL ATB technologies. Check your settings file to ensure it is
     spelled correctly"
+    *****************************
+    Here are some possible valid technology/detail combinations from your database:
+    {possible.to_string(index=False)}
+    (showing only first 50 results)
     *****************************
     """
             logger.warning(s)
