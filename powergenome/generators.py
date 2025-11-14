@@ -525,6 +525,7 @@ def label_retirement_year(
         df["retirement_year"] = np.nan
 
     df["retirement_age"] = df["technology_description"].map(retirement_ages).fillna(500)
+    df[age_col] = pd.to_datetime(df[age_col], errors="coerce")
     try:
         df.loc[df["retirement_year"].isna(), "retirement_year"] = (
             df.loc[df["retirement_year"].isna(), age_col].dt.year
@@ -554,7 +555,10 @@ def label_retirement_year(
             plant_id, gen_id, ret_year = record
             # gen ids are strings, not integers
             gen_id = str(gen_id)
-
+            # If plant_id_eia is in the index but not in the columns, move it back
+            if "plant_id_eia" not in df.columns and "plant_id_eia" in getattr(df.index, "names", []):
+                print("\n[DEBUG] Resetting index to bring plant_id_eia back as a column.")
+                df = df.reset_index()
             df.loc[
                 (df["plant_id_eia"] == plant_id) & (df["generator_id"] == gen_id),
                 "retirement_year",
@@ -1473,8 +1477,11 @@ def calc_unit_cluster_values(
     )
     df_values.index = df_values["cluster"].values
     if df_values["heat_rate_mmbtu_mwh"].isnull().values.any():
-        print(df)
-        print(df_values)
+        logger.warning(
+            f"[calc_unit_cluster_values] Null heat_rate detected after grouping "
+            f"({df_values['heat_rate_mmbtu_mwh'].isnull().sum()} clusters affected). "
+            f"Technology={technology}, clusters={df_values['cluster'].nunique()}."
+        )
     df_values["heat_rate_mmbtu_mwh_iqr"] = df.groupby("cluster").agg(
         {"heat_rate_mmbtu_mwh": iqr}
     )
@@ -2168,6 +2175,10 @@ def gentype_region_capacity_factor(
         by=["plant_id_eia", "report_date", "technology_description"],
         agg_fn={cap_col: "sum"},
     )
+    na_prm = plant_region_map["plant_id_eia"].isna()
+    print(f"[DEBUG] plant_region_map NA rows: {na_prm.sum()}, unique model_region: {plant_region_map.loc[na_prm, 'model_region'].nunique()}")
+    plant_tech_cap["plant_id_eia"] = plant_tech_cap["plant_id_eia"].astype("Int64")
+    plant_region_map["plant_id_eia"] = plant_region_map["plant_id_eia"].astype("Int64")
 
     plant_tech_cap = plant_tech_cap.merge(
         plant_region_map, on="plant_id_eia", how="left"
@@ -3586,9 +3597,47 @@ class GeneratorClusters:
 
         for _, df in region_tech_grouped:
             region, tech = _
+            # ADDED BY MBA: NEW GUARD: skip combos with zero clusters or no units
+            if num_clusters[region][tech] == 0 or df.empty:
+                skip_reasons = []
+                if num_clusters[region][tech] == 0:
+                    skip_reasons.append("num_clusters == 0")
+                if df.empty:
+                    skip_reasons.append("no units in df")
+
+                logger.info(
+                    "Skipping clustering for region %s, technology %s "
+                    "(num_clusters=%s, len(df)=%s). Reasons: %s",
+                    region,
+                    tech,
+                    num_clusters[region][tech],
+                    len(df),
+                    ", ".join(skip_reasons),
+                )
+
+                # Extra debug detail: show a tiny sample if anything is there
+                logger.debug(
+                    "  [SKIP DETAIL] region=%s, tech=%s, df.columns=%s, df.shape=%s\n%s",
+                    region,
+                    tech,
+                    list(df.columns),
+                    df.shape,
+                    df.head().to_string() if not df.empty else "  df is completely empty.",
+                )
+
+                continue
             grouped = group_units(df, self.settings)
             grouped["technology"] = tech
-
+            # NEW GUARD: skip if grouping produced no units
+            if grouped.empty:
+                logger.info(
+                    "Skipping clustering for region %s, technology %s: "
+                    "no units after grouping (len(raw df)=%s)",
+                    region,
+                    tech,
+                    len(df),
+                )
+                continue
             # This is bad. Should be setting up a dictionary of objects that picks the
             # correct clustering method. Can't keep doing if statements as the number of
             # methods grows. CHANGE LATER.
@@ -3643,14 +3692,22 @@ class GeneratorClusters:
                             """
                         logger.info(s)
                         num_clusters[region][tech] = len(grouped)
+                    X = grouped[cluster_cols]
+                    # If we still have nothing to cluster, just log and skip
+                    if X.empty:
+                        logger.info(
+                            "Skipping clustering for region %s, technology %s: "
+                            "grouped[cluster_cols] is empty (len(grouped)=%s)",
+                            region,
+                            tech,
+                            len(grouped),
+                        )
+                        continue
                     clusters = cluster.KMeans(
                         n_clusters=num_clusters[region][tech], random_state=6
                     ).fit(
-                        preprocessing.StandardScaler().fit_transform(
-                            grouped[cluster_cols]
-                        )
+                        preprocessing.StandardScaler().fit_transform(X)
                     )
-
                     grouped["cluster"] = (
                         clusters.labels_ + 1
                     )  # Change to 1-index for julia

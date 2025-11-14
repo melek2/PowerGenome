@@ -211,7 +211,6 @@ def fetch_atb_costs(
             )
 
         df = pd.DataFrame(all_rows, columns=col_names)
-        print(df)
         wacc_df = pd.DataFrame(
             wacc_rows, columns=["technology", "cost_case", "basis_year", "wacc_real"]
         )
@@ -911,6 +910,9 @@ def calc_om(
                 _df["Var_OM_Cost_per_MWh"] = atb_var_om_mwh * (
                     _df["heat_rate_mmbtu_mwh"].mean() / new_build_hr
                 )
+                if not df_list:
+                    # Nothing to adjust with NEMS values; just return the original df
+                    return df
 
             df_list.append(_df)
 
