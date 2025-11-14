@@ -2,7 +2,7 @@ pytest
 pandas>=0.24
 beautifulsoup4
 geopandas
-sklearn
+scikit-learn
 xlrd
 requests
 pyyaml
